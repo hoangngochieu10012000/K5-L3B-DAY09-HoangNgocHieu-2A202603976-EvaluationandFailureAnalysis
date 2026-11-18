@@ -70,3 +70,22 @@ Card này đi kèm mỗi báo cáo đánh giá và được dùng lại ở Day 
   - Biến thể `honest_refactor` (viết lại câu trả lời và tra cứu thêm thông tin nhưng kết quả nghiệp vụ đúng): Đạt `pass_rate: 1.0` trên toàn bộ các slice $\rightarrow$ `exit 0 — merge`.
 - **Giới hạn cỡ mẫu:** Một lỗi xuất hiện không thường xuyên ở 1/3 seed (`rare`) không thể được phát hiện một cách ổn định chỉ với 5 seeds. Đây là giới hạn về cỡ mẫu trong thống kê, không được hạ thấp ngưỡng kiểm soát để tránh gây ra báo động giả (false alarms) trên các PR an toàn.
 
+---
+
+## Bổ sung đánh giá v2 (M6 — Phân tích nhiễu A/A & Kiểm định độ ổn định $pass^k$)
+
+- **Kiểm định dải nhiễu A/A (`mutation --aa 66,77,88,99,110`):**
+  - Chạy so sánh agent chuẩn (`swarm`) trên 2 bộ seed độc lập: spec seeds `[11, 22, 33, 44, 55]` và alternate seeds `[66, 77, 88, 99, 110]`.
+  - Trên MockLLM: $\Delta = +0.0000$ tuyệt đối trên mọi chỉ số do hành vi seeded deterministic.
+  - **Lý giải về LLM thật:** Với các mô hình ngôn ngữ lớn thực tế, dải nhiễu A/A luôn $> 0$ (thường từ $2\% - 6\%$) do ảnh hưởng của nhiệt độ lấy mẫu (sampling temperature), phân bố xác suất token và sự trôi dạt ngữ cảnh. Sàn chấp nhận (floor threshold) của CI Gate **bắt buộc phải nằm ngoài biên độ nhiễu A/A này**. Nếu đặt sàn bên trong dải nhiễu, các PR lành tính (honest refactor) sẽ bị từ chối ngẫu nhiên, làm suy giảm nghiêm trọng độ tin cậy của pipeline CI.
+- **Ước lượng không chệch $pass@k$ và $pass^k$ (`pass_hat_k`):**
+  - Cài đặt hai công thức chuẩn từ nghiên cứu:
+    - $pass@k = 1 - \frac{\binom{n-c}{k}}{\binom{n}{k}}$ (Chen et al. 2021): Đo xác suất có ít nhất 1 trial thành công trong $k$ lượt rút.
+    - $pass^k = \frac{\binom{c}{k}}{\binom{n}{k}}$ (tau-bench, Yao et al. 2024): Đo xác suất toàn bộ $k$ trial đều thành công (độ tin cậy tuyệt đối). Luôn thỏa mãn $pass^k \le pass@1 \le pass@k$.
+- **Chặn lỗi chập chờn (`flaky_regression`) qua `pass_hat_5`:**
+  - Biến thể `flaky_regression` gài lỗi làm tròn tiền ở đúng $1/5$ seed (seed chia hết cho 3).
+  - Khi đánh giá thông thường, `pass_rate` trung bình đạt **0.9143** (vẫn trên sàn 0.85) và $pass@5$ đạt **1.0000** (tất cả các case đều pass ít nhất 1 lần). Do đó, metric trung bình không thể cảnh báo lỗi này.
+  - Tuy nhiên, vì chỉ cần fail 1 seed là $\binom{4}{5} = 0$, chỉ số $pass^5$ (`pass_hat_5`) bị tụt dốc thảm hại từ **0.8929** (baseline) xuống **0.5714**.
+  - Ngưỡng blocking `pass_hat_5` (min: 0.80) trong `metric_spec_v2.yaml` đã **chặn đứng `flaky_regression`**, bảo vệ hệ thống khỏi những phiên bản agent thiếu tin cậy.
+
+
