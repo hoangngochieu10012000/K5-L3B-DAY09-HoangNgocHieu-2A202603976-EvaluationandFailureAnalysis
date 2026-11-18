@@ -45,3 +45,28 @@ Card này đi kèm mỗi báo cáo đánh giá và được dùng lại ở Day 
   2. Eval set v1 có quy mô nhỏ (14 items), khoảng tin cậy bootstrap còn rộng với các lỗi hiếm xuất hiện (dưới 10%).
   3. Judge tone mới replay trên 50 mẫu public, chưa kiểm thử trên held-out set người dùng thật.
 - **Khi nào tăng eval-set version:** Khi phát hiện thêm failure modes mới từ production logs cần mở rộng bộ dữ liệu (như adversarial set v2), hoặc khi chính sách bồi thường (policy terms) thay đổi dẫn đến cập nhật ground truth.
+
+---
+
+## Bổ sung đánh giá v2 (M5 — Advanced Slice Gate)
+
+- **Run ID / eval set SHA v2:** `E-swarm-20261118-b8fe` · Eval Set v2 SHA: `b8fe5220998e`
+- **Quy mô Eval Set v2:** 28 items (14 items v1 regression + 14 items adversarial attack pack) × 5 seeds = 140 trials; nhãn tách riêng tại `data/eval/labels_v2.json`.
+- **Ánh xạ cơ chế tấn công (`config/fm_map.yaml`):** Toàn bộ 8 cơ chế tấn công trong `adversarial_v2.json` đã được ánh xạ vào taxonomy:
+  - `ticket_over_db` $\rightarrow$ FM-03, `stale_policy` $\rightarrow$ FM-06, `clause_sum` $\rightarrow$ FM-04, `double_deduct` $\rightarrow$ FM-05
+  - `sibling_refund` $\rightarrow$ FM-07, `denied_ignored` $\rightarrow$ FM-02, `reply_ledger_mismatch` $\rightarrow$ FM-08, `cross_principal` $\rightarrow$ FM-09
+  - Mỗi failure mode đều có $\ge 3$ items kiểm thử trong v2 (`evalset --v2 --check` đạt 0 lỗi).
+- **Thiết kế Slice Gates (`config/metric_spec_v2.yaml`):**
+  - `slice:money_movement/pass_rate` (ngưỡng min: 0.90, `no_significant_drop: true`, blocking): Tập trung giám sát các đơn có phát sinh giao dịch hoàn tiền (`refund_vnd > 0`).
+  - `slice:adversarial/pass_rate` (ngưỡng min: 0.90, blocking): Giám sát các đơn thuộc bộ tấn công đối kháng.
+  - `slice:denial/pass_rate` (ngưỡng min: 0.90, blocking): Giám sát các đơn bị từ chối bồi thường.
+- **Hiệu quả phát hiện lỗi của Slice Gate:**
+  - Đối với biến thể `slice_regression` (gài lỗi cộng dồn điều khoản trên các đơn có hoàn tiền ở seed lẻ):
+    - `pass_rate` trung bình toàn bộ đạt **0.9357** (vẫn trên sàn 0.85).
+    - Khoảng tin cậy paired bootstrap $\Delta -0.043$ CI $[-0.121, +0.029]$ có chặn trên $\ge 0$ (chạm 0), nên metric tổng thể **không chặn được**.
+    - Tuy nhiên, trong slice `money_movement`, `pass_rate` sụt giảm xuống **0.8500** ($< 0.90$, $\Delta -0.150$ CI $[-0.300, +0.000]$) $\rightarrow$ **Gate chặn thành công** với lý do `exit 1 — blocked: slice:money_movement/pass_rate`.
+- **Tránh báo nhầm (Zero False Alarms):**
+  - Biến thể `fixed`: Đạt `pass_rate: 1.0` trên toàn bộ các slice $\rightarrow$ `exit 0 — merge`.
+  - Biến thể `honest_refactor` (viết lại câu trả lời và tra cứu thêm thông tin nhưng kết quả nghiệp vụ đúng): Đạt `pass_rate: 1.0` trên toàn bộ các slice $\rightarrow$ `exit 0 — merge`.
+- **Giới hạn cỡ mẫu:** Một lỗi xuất hiện không thường xuyên ở 1/3 seed (`rare`) không thể được phát hiện một cách ổn định chỉ với 5 seeds. Đây là giới hạn về cỡ mẫu trong thống kê, không được hạ thấp ngưỡng kiểm soát để tránh gây ra báo động giả (false alarms) trên các PR an toàn.
+
