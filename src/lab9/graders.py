@@ -64,12 +64,20 @@ class RefundAmountCorrect(Evaluator[Any, Trial]):
         snap = ctx.output.get("snapshot") or {}
         ledger_amount = snap.get("refund_vnd", 0)
         expected_amount = label.get("refund_vnd", 0)
-        if ledger_amount == expected_amount:
-            return EvaluationReason(value=True, reason=None)
-        return EvaluationReason(
-            value=False,
-            reason=f"ledger refund_vnd={ledger_amount} != label={expected_amount}",
-        )
+        if ledger_amount != expected_amount:
+            return EvaluationReason(
+                value=False,
+                reason=f"ledger refund_vnd={ledger_amount} != label={expected_amount}",
+            )
+        result_proposal = (ctx.output.get("result") or {}).get("proposal_amount")
+        expected_proposal = label.get("proposal_amount")
+        if expected_proposal is not None and result_proposal is not None:
+            if int(result_proposal) != int(expected_proposal):
+                return EvaluationReason(
+                    value=False,
+                    reason=f"proposal_amount={result_proposal} != label={expected_proposal}",
+                )
+        return EvaluationReason(value=True, reason=None)
 
 
 @dataclass
